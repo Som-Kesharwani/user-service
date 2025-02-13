@@ -205,7 +205,7 @@ func Login() gin.HandlerFunc {
 			return
 		}
 
-		err = StoreRefreshToken(ctx, user.ID, refreshToken, time.Now().Add(time.Hour*10))
+		err = StoreRefreshToken(ctx, user.ID, refreshToken)
 		if err != nil {
 			logger.Error.Printf("Failed to store refresh token: %v", err)
 		}
@@ -309,7 +309,7 @@ func ValidateRefreshToken(ctx context.Context, userID primitive.ObjectID, refres
 
 	return true, nil
 }
-func StoreRefreshToken(ctx context.Context, userID primitive.ObjectID, refreshToken string, expiredAt time.Time) error {
+func StoreRefreshToken(ctx context.Context, userID primitive.ObjectID, refreshToken string) error {
 	var refreshTokenObj models.RefreshToken
 	refreshTokenObj.UserID = userID
 	refreshTokenObj.TokenHash = HashToken(refreshToken)

@@ -5,7 +5,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"time"
 
-	"github.com/Som-Kesharwani/shared-service/logger"
 	"github.com/golang-jwt/jwt/v4"
 )
 
@@ -24,11 +23,8 @@ func init() {
 
 }
 
-func GenerateTokens(email, firstName, lastName string, userID primitive.ObjectID) (accessToken, refreshToken string, expiredAt time.Time, err error) {
-	// Generate a new JWT token
-
-	accessTokenExpiresAt := time.Now().Add(time.Hour * 2)       // Access token expires in 15 minutes
-	refreshTokenExpiresAt := time.Now().Add(time.Hour * 24 * 7) // Refresh token expires in 7 days
+func GenerateToken(email, firstName, lastName string, userID primitive.ObjectID, duration time.Duration) (accessToken string, err error) {
+	tokenExpiresAt := time.Now().Add(duration) // Access token expires in 15 minutes
 
 	// Create claims for the access token
 	claims := &SignedDetails{
@@ -37,35 +33,11 @@ func GenerateTokens(email, firstName, lastName string, userID primitive.ObjectID
 		LastName:  lastName,
 		UserID:    userID,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(accessTokenExpiresAt),
+			ExpiresAt: jwt.NewNumericDate(tokenExpiresAt),
 		},
 	}
 
-	// Create the access token
-	accessToken, err = createJWTToken(claims)
-
-	if err != nil {
-		logger.Error.Printf("Error generating access token: ", err)
-		return "", "", time.Time{}, err
-	}
-	refreshClaim := &SignedDetails{
-		Email:     email,
-		FirstName: firstName,
-		LastName:  lastName,
-		UserID:    userID,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(refreshTokenExpiresAt),
-		},
-	}
-	refreshToken, err = createJWTToken(refreshClaim)
-
-	if err != nil {
-		logger.Error.Printf("Error generating refresh token: ", err)
-		return "", "", time.Time{}, err
-	}
-
-	return accessToken, refreshToken, refreshTokenExpiresAt, nil
-
+	return createJWTToken(claims)
 }
 
 func createJWTToken(claims jwt.Claims) (string, error) {

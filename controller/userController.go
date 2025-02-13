@@ -25,13 +25,11 @@ var validate *validator.Validate
 var refreshTokenCollection *mongo.Collection
 
 type UserResponse struct {
-	ID           primitive.ObjectID `bson:"id"`
-	FirstName    *string            `bson:"first_name" binding:"required"`
-	LastName     *string            `bson:"last_name" binding:"required"`
-	Email        *string            `bson:"email"  binding:"required"`
-	PhoneNo      *string            `json:"phone" validate:"required,min=10,max=10"`
-	Token        *string            `json:"token"`
-	RefreshToken *string            `json:"refresh_token"`
+	ID        primitive.ObjectID `bson:"id"`
+	FirstName *string            `bson:"first_name" binding:"required"`
+	LastName  *string            `bson:"last_name" binding:"required"`
+	Email     *string            `bson:"email"  binding:"required"`
+	PhoneNo   *string            `json:"phone" validate:"required,min=10,max=10"`
 }
 
 func init() {
@@ -134,20 +132,6 @@ func SignUp() gin.HandlerFunc {
 
 		user.Password = &passwordHash
 
-		token, refreshToken, expiredAt, err := helper.GenerateTokens(*user.Email, *user.FirstName, *user.LastName, user.ID)
-
-		if err = StoreRefreshToken(ctx, userID, refreshToken, expiredAt); err != nil {
-			logger.Error.Printf("Failed to store refresh token: %v", err)
-			//c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to "})
-			//return
-		}
-
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error generating tokens"})
-			return
-		}
-		user.TokenHash = HashToken(refreshToken)
-
 		_, err = userCollection.InsertOne(ctx, user)
 
 		if err != nil {
@@ -156,13 +140,11 @@ func SignUp() gin.HandlerFunc {
 		}
 
 		userResponse := &UserResponse{
-			ID:           user.ID,
-			FirstName:    user.FirstName,
-			LastName:     user.LastName,
-			Email:        user.Email,
-			PhoneNo:      user.PhoneNo,
-			Token:        &token,
-			RefreshToken: &refreshToken,
+			ID:        user.ID,
+			FirstName: user.FirstName,
+			LastName:  user.LastName,
+			Email:     user.Email,
+			PhoneNo:   user.PhoneNo,
 		}
 
 		c.JSON(http.StatusOK, gin.H{"message": "user successfully Signed up!", "user": userResponse})
@@ -208,34 +190,22 @@ func Login() gin.HandlerFunc {
 		}
 
 		// Generate new tokens (access and refresh)
-		token, refreshToken, expiredAt, err := helper.GenerateTokens(*user.Email, *user.FirstName, *user.LastName, user.ID)
+		var accessToken string
+		accessToken, err = helper.GenerateToken(*user.Email, *user.FirstName, *user.LastName, user.ID, time.Hour*1)
+		if err != nil {
+			logger.Error.Printf("Failed to generate access token: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate access token"})
+		}
+
+		var refreshToken string
+		refreshToken, err = helper.GenerateToken(*user.Email, *user.FirstName, *user.LastName, user.ID, time.Hour*10)
+		//	_, refreshToken, expiredAt, err := helper.GenerateTokens(*user.Email, *user.FirstName, *user.LastName, user.ID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error generating tokens"})
 			return
 		}
-		tokenHash := HashToken(refreshToken)
-		if err != nil {
-			logger.Error.Printf("Failed to insert the user into the database: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creating the user"})
-		}
 
-		updateObj := bson.M{
-			"$set": bson.M{
-				"TokenHash": tokenHash,
-				"update_at": time.Now(),
-			},
-		}
-		_, err = userCollection.UpdateOne(
-			ctx,
-			bson.M{"id": user.ID},
-			updateObj,
-		)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error updating tokens"})
-			return
-		}
-
-		err = StoreRefreshToken(ctx, user.ID, refreshToken, expiredAt)
+		err = StoreRefreshToken(ctx, user.ID, refreshToken, time.Now().Add(time.Hour*10))
 		if err != nil {
 			logger.Error.Printf("Failed to store refresh token: %v", err)
 		}
@@ -243,40 +213,39 @@ func Login() gin.HandlerFunc {
 		// Respond with user details and tokens
 		c.JSON(http.StatusOK, gin.H{
 			"message":       "Successfully logged in",
-			"token":         token,
+			"token":         accessToken,
 			"refresh_token": refreshToken,
 		})
 
 	}
 }
 
-/*
-	func GetUserToken() gin.HandlerFunc {
-		return func(c *gin.Context) {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			var refreshToken []models.RefreshToken
+func GetUserToken() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		var refreshToken []models.RefreshToken
 
-			cursor, err := refreshTokenCollection.Find(ctx, bson.M{})
+		cursor, err := refreshTokenCollection.Find(ctx, bson.M{})
 
-			if err != nil {
-				logger.Error.Printf("Error finding all tokens: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching tokens"})
-				return
-			}
-
-			err = cursor.All(ctx, &refreshToken)
-			if err != nil {
-				logger.Error.Printf("Error getting all tokens: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching tokens"})
-				return
-			}
-
-			c.JSON(http.StatusOK, gin.H{"tokens": refreshToken})
-
+		if err != nil {
+			logger.Error.Printf("Error finding all tokens: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching tokens"})
+			return
 		}
+
+		err = cursor.All(ctx, &refreshToken)
+		if err != nil {
+			logger.Error.Printf("Error getting all tokens: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching tokens"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"tokens": refreshToken})
+
 	}
-*/
+}
+
 func RefreshToken() gin.HandlerFunc {
 	return func(c *gin.Context) {
 
@@ -307,51 +276,25 @@ func RefreshToken() gin.HandlerFunc {
 		}
 
 		// Generate new tokens
-		accessToken, newRefreshToken, expiredAt, err := helper.GenerateTokens(claims.Email, claims.FirstName, claims.LastName, claims.UserID)
+		accessToken, err := helper.GenerateToken(claims.Email, claims.FirstName, claims.LastName, claims.UserID, time.Hour*10)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error generating tokens"})
 			return
 		}
 
-		err = StoreRefreshToken(ctx, claims.UserID, newRefreshToken, expiredAt)
-		if err != nil {
-			logger.Error.Printf("Failed to store refresh token: %v", err)
-		}
-
-		// Store the new refresh token (optional: remove the old one)
-		//userID, err := primitive.ObjectIDFromHex(claims.UserID)
-
-		tokenHash := HashToken(newRefreshToken)
-		updateObj := bson.M{
-			"$set": bson.M{
-				"TokenHash": tokenHash,
-				"update_at": time.Now(),
-			},
-		}
-		_, err = userCollection.UpdateOne(
-			ctx,
-			bson.M{"id": claims.ID},
-			updateObj,
-		)
-		//_ = StoreRefreshToken(ctx, claims.UserID, newRefreshToken)
-		if err != nil {
-			logger.Error.Printf("Error updating token: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error updating tokens"})
-			return
-		}
 		// Send the new tokens
 		c.JSON(http.StatusOK, gin.H{
-			"access_token":  accessToken,
-			"refresh_token": newRefreshToken,
+			"access_token": accessToken,
+			"expires_in":   time.Now().Add(time.Hour * 10).Local(),
 		})
 	}
 }
 
 func ValidateRefreshToken(ctx context.Context, userID primitive.ObjectID, refreshToken string) (bool, error) {
 	var existingUser models.User
-	//ID, err := primitive.ObjectIDFromHex(userID)
+
 	err := userCollection.FindOne(ctx, bson.M{"id": userID}).Decode(&existingUser)
-	//result, err := userCollection.Find(ctx, bson.M{"userId": userID})
+
 	if err != nil {
 		logger.Error.Printf("Error finding user: %v", err)
 		return false, err
@@ -359,9 +302,6 @@ func ValidateRefreshToken(ctx context.Context, userID primitive.ObjectID, refres
 	var refreshedToken models.RefreshToken
 	err = refreshTokenCollection.FindOne(ctx, bson.M{"user_id": userID}).Decode(&refreshedToken)
 
-	/*if storedToken.ExpiresAt.Before(time.Now()) {
-		return false, errors.New("refresh token expired")
-	}*/
 	token := HashToken(refreshToken)
 	if ok, msg := VerifyTokenHash(refreshedToken.TokenHash, token); !ok {
 		return false, errors.New(msg)
@@ -373,7 +313,6 @@ func StoreRefreshToken(ctx context.Context, userID primitive.ObjectID, refreshTo
 	var refreshTokenObj models.RefreshToken
 	refreshTokenObj.UserID = userID
 	refreshTokenObj.TokenHash = HashToken(refreshToken)
-	refreshTokenObj.ExpiresAt = expiredAt
 
 	_, err := refreshTokenCollection.DeleteOne(ctx, bson.M{"user_id": userID})
 	if err != nil {

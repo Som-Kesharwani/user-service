@@ -14,9 +14,10 @@ func UserRouter(incomingRoutes *gin.Engine) {
 	incomingRoutes.POST("/user/signUp", controller.SignUp())
 	incomingRoutes.POST("/user/login", controller.Login())
 	incomingRoutes.POST("/user/refreshToken", controller.RefreshToken())
-	//incomingRoutes.GET("/getUserToken", controller.GetUserToken())
+
 	protected := incomingRoutes.Group("/", middleware.Authenticate())
 	{
+		protected.GET("/getUserToken", controller.GetUserToken())
 		protected.GET("/users", controller.GetUsers())
 		protected.GET("user/:id", controller.GetUser())
 	}

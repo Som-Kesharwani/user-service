@@ -15,12 +15,11 @@ type User struct {
 	CreateAt  time.Time          `json:"create_at"`
 	UpdateAt  time.Time          `json:"update_at"`
 	PhoneNo   *string            `json:"phone" validate:"required,min=10,max=10"`
-	TokenHash string             `json:"token_hash"`
+	//TokenHash string             `json:"token_hash"`
 }
 
 type RefreshToken struct {
 	ID        primitive.ObjectID `bson:"id,omitempty"`
 	UserID    primitive.ObjectID `bson:"user_id""`
 	TokenHash string             `json:"token_hash"`
-	ExpiresAt time.Time          `json:"expires_at"`
 }
